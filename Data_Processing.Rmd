@@ -1,0 +1,569 @@
+---
+title: "Creating POLAR3 and IMD Lookup"
+output: html_document
+---
+
+
+```{r, echo=FALSE,warning=FALSE,eval=FALSE}
+#setwd("/Users/alex/HE_Lookup/")
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/")
+library(rgdal) #Shapefile functions
+```
+
+The first step is to import the [Office for National Statistics (ONS) postcode directory](http://www.ons.gov.uk/ons/guide-method/geography/products/postcode-directories/-nspp-/index.html) into R, which provides a lookup between postcodes and various nested zonal geography. Only those columns which are needed for this project are kept.
+
+```{r eval=FALSE}
+#Read a CSV file containing the ONS Postcode Directory
+ONSPD_14 <- read.csv("Data/ONSPD_NOV_2014_UK.csv")
+
+#Specify columns to keep
+ONSPD_14 <- ONSPD_14[,c("pcd","oseast1m","osnrth1m","lsoa01","lsoa11","casward")]
+
+#Remove records where there are blank caswards, LSOA or Easting and Northing
+ONSPD_14 <- ONSPD_14[ONSPD_14$casward != "",]
+ONSPD_14 <- ONSPD_14[ONSPD_14$lsoa01 != "",]
+ONSPD_14 <- ONSPD_14[!is.na(ONSPD_14$oseast1m),]
+ONSPD_14 <- ONSPD_14[!is.na(ONSPD_14$osnrth1m),]
+```
+
+The next step is to convert to Easting and Northing co-ordinates into latitude and longitude.
+
+```{r eval=FALSE}
+#setup CRS
+ukgrid = "+init=epsg:27700"
+latlong = "+init=epsg:4326"
+
+# Create coordinates variable
+coords <- cbind(Easting = as.numeric(as.character(ONSPD_14$oseast1m)),Northing = as.numeric(as.character(ONSPD_14$osnrth1m)))
+
+# Create the SpatialPointsDataFrame
+ONSPD_14_SP <- SpatialPointsDataFrame(coords, data = ONSPD_14, proj4string = CRS("+init=epsg:27700"))
+
+# Convert from Eastings and Northings to Latitude and Longitude
+ONSPD_14_SP_LL <- spTransform(ONSPD_14_SP, CRS(latlong))
+
+# we also need to rename the columns
+colnames(ONSPD_14_SP_LL@coords)[colnames(ONSPD_14_SP_LL@coords) == "Easting"] <- "Longitude"
+colnames(ONSPD_14_SP_LL@coords)[colnames(ONSPD_14_SP_LL@coords) == "Northing"] <- "Latitude"
+head(ONSPD_14_SP_LL@coords)
+
+#Append onto ONSPD
+ONSPD_14 <- cbind(ONSPD_14,ONSPD_14_SP_LL@coords)
+
+
+```
+
+#Index of Multiple Deprivation (IMD)
+
+An Index of Multiple Deprivation is calculated for each constituent country of the UK. These rank areas (LSOA in [England](http://data.gov.uk/dataset/index-of-multiple-deprivation) and [Wales](http://gov.wales/statistics-and-research/welsh-index-multiple-deprivation-indicator-data/?lang=en), SOA in [Northern Ireland](http://www.nisra.gov.uk/deprivation/nimdm_2010.htm) and Data Zones in [Scotland](http://www.gov.scot/Topics/Statistics/SIMD/DataAnalysis/Background-Data-2012) ) by their relative deprivation. 
+
+They are not comparable between counties, given the different geography, time periods, input data and methods. As such, each IMD is treated separately, with country specific deciles calculated. These data are then combined into a single data object that enables them to be appended onto the NSPD. All of the data were downloaded, however, converted to CSV. As a side note, it would be great if government agencies would **not release ``open'' data in proprietary formats!**
+
+##IMD England
+
+```{r eval=FALSE}
+#Read IMD England
+IMD_England <- read.csv("Data/England_IMD_Overall_2010.csv")
+
+#Remove unwanted columns
+IMD_England<- IMD_England[,c("LSOA_CODE","IMD_SCORE","IMD_RANK")]
+
+#Create Deciles
+IMD_England$Decile <- with(IMD_England, cut(IMD_England$IMD_SCORE, breaks=10, labels=10:1)) #1 = most deprived
+
+#Create zone and length lookup
+IMD_England$Zone <- "LSOA"
+IMD_England$Zone_N <- nrow(IMD_England)
+
+#Country Flag
+IMD_England$CTRY <- "England"
+
+#Year Flag
+IMD_England$Year <- "2010"
+
+
+```
+
+
+##IMD Scotland
+
+```{r eval=FALSE}
+#Read IMD Scotland
+IMD_Scotland <- read.csv("Data/Scotland_IMD_Overall_2012.csv")
+
+#Create Deciles
+IMD_Scotland$Decile <- with(IMD_Scotland, cut(IMD_Scotland$IMD_SCORE, breaks=10, labels=10:1)) #1 = most deprived
+
+#Create zone and length lookup
+IMD_Scotland$Zone <- "Data Zone"
+IMD_Scotland$Zone_N <- nrow(IMD_Scotland)
+
+#Country Flag
+IMD_Scotland$CTRY <- "Scotland"
+
+#Year Flag
+IMD_Scotland$Year <- "2012"
+
+
+
+```
+
+##IMD Wales
+
+```{r eval=FALSE}
+
+#2011
+# #Read IMD WALES
+# IMD_Wales <- read.csv("Data/Wales_IMD_Overall_2011.csv")
+# 
+# #Read IMD WALES CORRECTIONS
+# IMD_Wales_COR <- read.csv("Data/Wales_IMD_Overall_2011_CORRECTIONS.csv")
+# 
+# #Remove records with error
+# IMD_Wales <- IMD_Wales[!IMD_Wales$LSOA_CODE %in% IMD_Wales_COR$LSOA_CODE,]
+# 
+# #Replace with corrections
+# IMD_Wales <- rbind(IMD_Wales,IMD_Wales_COR)
+# 
+# #Create Deciles
+# IMD_Wales$Decile <- with(IMD_Wales, cut(IMD_Wales$IMD_SCORE, breaks=10, labels=10:1)) #1 = most deprived
+
+#2014
+#Read IMD WALES
+IMD_Wales <- read.csv("Data/Wales_IMD_Overall_2014.csv") #NB - Only supplies ranks
+
+#Create Deciles
+IMD_Wales$Decile <- with(IMD_Wales, cut(IMD_Wales$IMD_RANK, breaks=10, labels=1:10)) #1 = most deprived
+
+#Create zone and length lookup
+IMD_Wales$Zone <- "LSOA"
+IMD_Wales$Zone_N <- nrow(IMD_Wales)
+
+#Country Flag
+IMD_Wales$CTRY <- "Wales"
+
+#Year Flag
+IMD_Wales$Year <- "2014"
+
+
+```
+
+##IMD Northern Ireland
+
+```{r eval=FALSE}
+#Read IMD Northern Ireland
+IMD_NI <- read.csv("Data/Northern_Ireland_IMD_Overall_2010.csv")
+
+#Create Deciles
+IMD_NI$Decile <- with(IMD_NI, cut(IMD_NI$IMD_SCORE, breaks=10, labels=10:1)) #1 = most deprived
+
+#Create zone and length lookup
+IMD_NI$Zone <- "SOA"
+IMD_NI$Zone_N <- nrow(IMD_NI)
+
+#Country Flag
+IMD_NI$CTRY <- "Northern Ireland"
+
+#Year Flag
+IMD_NI$Year <- "2010"
+
+```
+
+#Participation Of Local Areas Classification (POLAR)
+The [POLAR classification](https://www.hefce.ac.uk/media/hefce/content/pubs/2012/201226/POLAR3.pdf) is compiled by HEFCE and presents a HE participation rate for Census Area Statistical Wards. This breaks young participation down into five quintiles (1=lowest rate; 5=highest rate)
+
+```{r eval=FALSE}
+#Read POLAR
+POLAR <- read.csv("Data/casward_to_area_groups_12_09_10a.csv",skip=19)
+
+#Remove unwanted columns
+POLAR <- POLAR[,c("casward", "qYPR", "qAHE")]
+
+#Remove trailing spaces
+POLAR$casward <- gsub(" ","",POLAR$casward)
+
+#Recode POLAR cats
+library(plyr)
+
+POLAR$POLAR_Y[POLAR$qYPR==1] <- "1st"
+POLAR$POLAR_Y[POLAR$qYPR==2] <- "2nd"
+POLAR$POLAR_Y[POLAR$qYPR==3] <- "3rd"
+POLAR$POLAR_Y[POLAR$qYPR==4] <- "4th"
+POLAR$POLAR_Y[POLAR$qYPR==5] <- "5th"
+
+POLAR$POLAR_O[POLAR$qAHE==1] <- "1st"
+POLAR$POLAR_O[POLAR$qAHE==2] <- "2nd"
+POLAR$POLAR_O[POLAR$qAHE==3] <- "3rd"
+POLAR$POLAR_O[POLAR$qAHE==4] <- "4th"
+POLAR$POLAR_O[POLAR$qAHE==5] <- "5th"
+
+POLAR <- POLAR[,-(2:3)]
+
+```
+
+#Creating a unified IMD table
+Prior to merging the IMD tables onto the ONSPD the country files require unification into a single data frame object. Using the rbind function requires that the column names match, so these are all altered to mirror the England file.
+
+```{r eval=FALSE}
+
+#Add a NULL column for Wales
+#IMD_Wales$IMD_SCORE <- NA
+#IMD_Wales <- IMD_Wales[,c("LSOA_CODE","IMD_SCORE","IMD_RANK","Decile","Zone","Zone_N","CTRY", "Year")]
+
+#Change names
+colnames(IMD_England) <- c("CODE","IMD_SCORE","IMD_RANK","Decile","Zone","Zone_N","CTRY", "Year")
+colnames(IMD_Scotland) <- c("CODE","IMD_SCORE","IMD_RANK","Decile","Zone","Zone_N","CTRY", "Year")
+colnames(IMD_Wales) <- c("CODE","IMD_SCORE","IMD_RANK","Decile","Zone","Zone_N","CTRY", "Year")
+colnames(IMD_NI) <- c("CODE","IMD_SCORE","IMD_RANK","Decile","Zone","Zone_N","CTRY", "Year")
+
+#Create unified data frame (excluding Wales)
+IMD_UK <- rbind(IMD_England,IMD_Scotland,IMD_NI)
+
+```
+
+#Merge ONSPD, POLAR and IMD lookups
+
+The final stage is to merge the IMD and POLAR data onto the postcode directory, remove the postcode spaces and then export as a CSV file.
+
+```{r eval=FALSE}
+#POLAR
+ONSPD_14 <- merge(ONSPD_14,POLAR, by.x="casward",by.y="casward", all.x=TRUE)
+
+#IMD
+ONSPD_14 <- merge(ONSPD_14,IMD_UK, by.x="lsoa01",by.y="CODE", all.x=TRUE)
+
+#Extract Wales
+ONSPD_14_NW <- ONSPD_14[!is.na(ONSPD_14$CTRY),]
+ONSPD_14_W <- ONSPD_14[is.na(ONSPD_14$CTRY),]
+ONSPD_14_W <- ONSPD_14_W[,-(11:17)]
+
+
+#IMD Wales
+ONSPD_14_W <- merge(ONSPD_14_W,IMD_Wales, by.x="lsoa11",by.y="CODE", all.x=TRUE)
+
+#Bind Wales
+ONSPD_14 <- rbind(ONSPD_14_NW,ONSPD_14_W)
+
+
+
+#Remove E & N
+ONSPD_14$oseast1m <- NULL
+ONSPD_14$osnrth1m <- NULL
+
+#Swap 2001 LSOA Codes in Wales for 2011 version
+ONSPD_14$lsoa01 <- ifelse(ONSPD_14$CTRY == "Wales", as.character(ONSPD_14$lsoa11), as.character(ONSPD_14$lsoa01))
+
+#Remove 2011 code
+ONSPD_14$lsoa11 <- NULL
+
+#Remove postcode spaces
+ONSPD_14$pcd <- gsub(" ","",ONSPD_14$pcd)
+
+#Write out CSV
+write.csv(ONSPD_14,"ONSPD_14.csv",row.names=FALSE)
+
+```
+
+
+## Create zone geojson
+
+For the mapping, a single polygon was required for each zone; including, LSOA, Data Zones, SOA and CAS Wards. As such, the following process creates directories of [geojson](http://geojson.org/) files that can be linked to a map.
+
+* CAS Wards
+    * [England](http://census.edina.ac.uk/easy_download_data.html?data=England_caswa_2001)
+    * [Scotland](http://census.edina.ac.uk/easy_download_data.html?data=Scotland_caswa_2001)
+    * [Wales](http://census.edina.ac.uk/easy_download_data.html?data=Wales_caswa_2001)
+    * [Northern Ireland](http://census.edina.ac.uk/easy_download_data.html?data=Nireland_wa_2001)
+* LSOA / DZ / SOA
+    * [England](http://census.edina.ac.uk/easy_download_data.html?data=England_low_soa_2001)
+    * [Scotland](http://sedsh127.sedsh.gov.uk/Atom_data/ScotGov/ZippedShapefiles/SG_DataZoneBdry_2001.zip)
+    * [Wales](http://census.edina.ac.uk/easy_download_data.html?data=Wales_lsoa_2011)
+    * [Northern Ireland](http://www.nisra.gov.uk/geography/SOA_.htm)
+
+
+```{r eval=FALSE}
+library(rgdal)
+library(rgeos)
+library(sp)
+library(maptools)
+
+
+#setup CRS
+ukgrid = "+init=epsg:27700"
+latlong = "+init=epsg:4326"
+
+
+#CAS Wards (England)
+#setwd("/Users/alex/HE_Lookup/Boundaries/")
+#setwd("/Volumes/Macintosh\ HD\ 2/Dropbox/projects/HE_Lookup/Boundaries/casward_2001/")
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/")
+#Read shapefile
+
+polygon <- readOGR("shapefiles/", "England_caswa_2001_clipped")
+#Remove unwanted
+polygon <- polygon[,-(2:5)]
+
+#ONS_CODE <- "00BYFJ"
+
+WARD_LIST <- unique(as.character(polygon@data$ONS_LABEL)) #unique is required to remove entries with multiple polygons
+
+for (x in 1:length(WARD_LIST)){
+  
+ONS_CODE <- WARD_LIST[x]
+  
+polygonWGS <- spTransform(polygon[polygon@data$ONS_LABEL == ONS_CODE,], CRS(latlong)) #Set CRS
+polygonWGS <- unionSpatialPolygons(polygonWGS,polygonWGS$ONS_LABEL) #Ensure a single polygon
+polygonWGS <- gSimplify(polygonWGS, 0.0000009, topologyPreserve=TRUE) #Simplify
+polygonWGS <- SpatialPolygonsDataFrame(polygonWGS,data=as.data.frame(ONS_CODE,row.names=names(polygonWGS))) #Convert back to spatial polygon data frame
+
+#Write file
+writeOGR(polygonWGS, dsn=paste0(ONS_CODE,".geojson"), layer="polygonWGS", driver="GeoJSON")
+remove(polygonWGS)
+remove(ONS_CODE)
+
+}
+
+
+
+
+#CAS Wards (Wales)
+#setwd("/Users/alex/HE_Lookup/Boundaries/")
+#setwd("/Volumes/Macintosh\ HD\ 2/Dropbox/projects/HE_Lookup/Boundaries/")
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/")
+#Read shapefile
+
+polygon <- readOGR("shapefiles/", "Wales_caswa_2001_clipped")
+#Remove unwanted
+polygon <- polygon[,-c(1,3:4)]
+colnames(polygon@data) <- "ONS_LABEL"
+
+WARD_LIST <- unique(as.character(polygon@data$ONS_LABEL)) #unique is required to remove entries with multiple polygons
+
+setwd("/Volumes/Macintosh\ HD\ 2/Dropbox/projects/HE_Lookup/Boundaries/casward_2001")
+
+for (x in 1:length(WARD_LIST)){
+  
+ONS_CODE <- WARD_LIST[x]
+  
+polygonWGS <- spTransform(polygon[polygon@data$ONS_LABEL == ONS_CODE,], CRS(latlong)) #Set CRS
+polygonWGS <- unionSpatialPolygons(polygonWGS,polygonWGS$ONS_LABEL) #Ensure a single polygon
+polygonWGS <- gSimplify(polygonWGS, 0.0000009, topologyPreserve=TRUE) #Simplify
+polygonWGS <- SpatialPolygonsDataFrame(polygonWGS,data=as.data.frame(ONS_CODE,row.names=names(polygonWGS))) #Convert back to spatial polygon data frame
+
+#Write file
+writeOGR(polygonWGS, dsn=paste0(ONS_CODE,".geojson"), layer="polygonWGS", driver="GeoJSON")
+remove(polygonWGS)
+remove(ONS_CODE)
+
+}
+
+#CAS Wards (Northern Ireland)
+#setwd("/Users/alex/HE_Lookup/Boundaries/")
+#setwd("/Volumes/Macintosh\ HD\ 2/Dropbox/projects/HE_Lookup/Boundaries/")
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/")
+#Read shapefile
+
+polygon <- readOGR("shapefiles/", "NIreland_wa_2001_area")
+#Remove unwanted
+polygon <- polygon[,-1]
+colnames(polygon@data) <- "ONS_LABEL"
+
+WARD_LIST <- unique(as.character(polygon@data$ONS_LABEL)) #unique is required to remove entries with multiple polygons
+
+setwd("/Volumes/Macintosh\ HD\ 2/Dropbox/projects/HE_Lookup/Boundaries/casward_2001")
+
+for (x in 1:length(WARD_LIST)){
+  
+ONS_CODE <- WARD_LIST[x]
+  
+polygonWGS <- spTransform(polygon[polygon@data$ONS_LABEL == ONS_CODE,], CRS(latlong)) #Set CRS
+polygonWGS <- unionSpatialPolygons(polygonWGS,polygonWGS$ONS_LABEL) #Ensure a single polygon
+polygonWGS <- gSimplify(polygonWGS, 0.0000009, topologyPreserve=TRUE) #Simplify
+polygonWGS <- SpatialPolygonsDataFrame(polygonWGS,data=as.data.frame(ONS_CODE,row.names=names(polygonWGS))) #Convert back to spatial polygon data frame
+
+#Write file
+writeOGR(polygonWGS, dsn=paste0(ONS_CODE,".geojson"), layer="polygonWGS", driver="GeoJSON")
+remove(polygonWGS)
+remove(ONS_CODE)
+
+}
+
+
+#CAS Wards (Scotland)
+#setwd("/Users/alex/HE_Lookup/Boundaries/")
+#setwd("/Volumes/Macintosh\ HD\ 2/Dropbox/projects/HE_Lookup/Boundaries/")
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/")
+#Read shapefile
+
+polygon <- readOGR("shapefiles/", "Scotland_caswa_2001_area")
+#Remove unwanted
+polygon <- polygon[,-c(1,3:6)]
+colnames(polygon@data) <- "ONS_LABEL"
+
+WARD_LIST <- unique(as.character(polygon@data$ONS_LABEL)) #unique is required to remove entries with multiple polygons
+
+setwd("/Volumes/Macintosh\ HD\ 2/Dropbox/projects/HE_Lookup/Boundaries/casward_2001")
+
+for (x in 1214:length(WARD_LIST)){
+  
+ONS_CODE <- WARD_LIST[x]
+  
+polygonWGS <- spTransform(polygon[polygon@data$ONS_LABEL == ONS_CODE,], CRS(latlong)) #Set CRS
+polygonWGS <- gSimplify(polygonWGS, 0.0000009, topologyPreserve=TRUE) #Simplify
+polygonWGS <- SpatialPolygonsDataFrame(polygonWGS,data=as.data.frame(rep(ONS_CODE,length(polygonWGS@polygons)),row.names=names(polygonWGS))) #Convert back to spatial polygon data frame
+colnames(polygonWGS@data) <- "ONS_LABEL"
+
+polygonWGS <- unionSpatialPolygons(polygonWGS,polygonWGS$ONS_LABEL) #Ensure a single polygon
+polygonWGS <- SpatialPolygonsDataFrame(polygonWGS,data=as.data.frame(rep(ONS_CODE,length(polygonWGS@polygons)),row.names=names(polygonWGS))) #Convert back to spatial polygon data frame
+colnames(polygonWGS@data) <- "ONS_LABEL"
+
+
+
+
+#Write file
+writeOGR(polygonWGS, dsn=paste0(ONS_CODE,".geojson"), layer="polygonWGS", driver="GeoJSON")
+remove(polygonWGS)
+remove(ONS_CODE)
+
+}
+
+
+
+############# LSOA / DZ / SOA
+
+
+
+#LSOA (England)
+#setwd("/Users/alex/HE_Lookup/Boundaries/")
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/")
+
+#Read shapefile
+
+polygon <- readOGR("shapefiles/", "england_low_soa_2001_gen")
+#Remove unwanted
+polygon <- polygon[,-(2:4)]
+colnames(polygon@data) <- "ONS_LABEL"
+
+SOA_LIST <- unique(as.character(polygon@data$ONS_LABEL)) #unique is required to remove entries with multiple polygons
+
+for (x in 1:length(SOA_LIST)){
+  
+ONS_CODE <- SOA_LIST[x]
+  
+polygonWGS <- spTransform(polygon[polygon@data$ONS_LABEL == ONS_CODE,], CRS(latlong)) #Set CRS
+polygonWGS <- unionSpatialPolygons(polygonWGS,polygonWGS$ONS_LABEL) #Ensure a single polygon
+polygonWGS <- gSimplify(polygonWGS, 0.0000009, topologyPreserve=TRUE) #Simplify
+polygonWGS <- SpatialPolygonsDataFrame(polygonWGS,data=as.data.frame(ONS_CODE,row.names=names(polygonWGS))) #Convert back to spatial polygon data frame
+
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/LSOA_DZ_SOA")
+
+#Write file
+writeOGR(polygonWGS, dsn=paste0(ONS_CODE,".geojson"), layer="polygonWGS", driver="GeoJSON")
+remove(polygonWGS)
+remove(ONS_CODE)
+
+}
+
+
+
+#DZ (Scotland)
+#setwd("/Users/alex/HE_Lookup/Boundaries/")
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/")
+
+#Read shapefile
+
+polygon <- readOGR("shapefiles/", "SG_DataZone_Bdry_2001")
+#Remove unwanted
+polygon <- polygon[,-(2:6)]
+colnames(polygon@data) <- "ONS_LABEL"
+
+SOA_LIST <- unique(as.character(polygon@data$ONS_LABEL)) #unique is required to remove entries with multiple polygons
+
+for (x in 1:length(SOA_LIST)){
+  
+ONS_CODE <- SOA_LIST[x]
+  
+polygonWGS <- spTransform(polygon[polygon@data$ONS_LABEL == ONS_CODE,], CRS(latlong)) #Set CRS
+polygonWGS <- unionSpatialPolygons(polygonWGS,polygonWGS$ONS_LABEL) #Ensure a single polygon
+polygonWGS <- gSimplify(polygonWGS, 0.000009, topologyPreserve=TRUE) #Simplify
+polygonWGS <- SpatialPolygonsDataFrame(polygonWGS,data=as.data.frame(ONS_CODE,row.names=names(polygonWGS))) #Convert back to spatial polygon data frame
+
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/LSOA_DZ_SOA")
+
+#Write file
+writeOGR(polygonWGS, dsn=paste0(ONS_CODE,".geojson"), layer="polygonWGS", driver="GeoJSON")
+remove(polygonWGS)
+remove(ONS_CODE)
+
+}
+
+
+
+#LSOA (Wales)
+#setwd("/Users/alex/HE_Lookup/Boundaries/")
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/")
+
+#Read shapefile
+
+polygon <- readOGR("shapefiles/", "Wales_lsoa_2011_gen")
+#Remove unwanted
+polygon <- polygon[,-(2:4)]
+colnames(polygon@data) <- "ONS_LABEL"
+
+SOA_LIST <- unique(as.character(polygon@data$ONS_LABEL)) #unique is required to remove entries with multiple polygons
+
+for (x in 1:length(SOA_LIST)){
+  
+ONS_CODE <- SOA_LIST[x]
+  
+polygonWGS <- spTransform(polygon[polygon@data$ONS_LABEL == ONS_CODE,], CRS(latlong)) #Set CRS
+polygonWGS <- unionSpatialPolygons(polygonWGS,polygonWGS$ONS_LABEL) #Ensure a single polygon
+polygonWGS <- gSimplify(polygonWGS, 0.0000009, topologyPreserve=TRUE) #Simplify
+polygonWGS <- SpatialPolygonsDataFrame(polygonWGS,data=as.data.frame(ONS_CODE,row.names=names(polygonWGS))) #Convert back to spatial polygon data frame
+
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/LSOA_DZ_SOA")
+
+#Write file
+writeOGR(polygonWGS, dsn=paste0(ONS_CODE,".geojson"), layer="polygonWGS", driver="GeoJSON")
+remove(polygonWGS)
+remove(ONS_CODE)
+
+}
+
+
+
+
+#LSOA (NI)
+#setwd("/Users/alex/HE_Lookup/Boundaries/")
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/")
+
+#Read shapefile
+
+polygon <- readOGR("shapefiles/", "soa")
+#Remove unwanted
+polygon <- polygon[,-(1:3)]
+colnames(polygon@data) <- "ONS_LABEL"
+
+SOA_LIST <- unique(as.character(polygon@data$ONS_LABEL)) #unique is required to remove entries with multiple polygons
+
+for (x in 1:length(SOA_LIST)){
+  
+ONS_CODE <- SOA_LIST[x]
+  
+polygonWGS <- spTransform(polygon[polygon@data$ONS_LABEL == ONS_CODE,], CRS(latlong)) #Set CRS
+polygonWGS <- unionSpatialPolygons(polygonWGS,polygonWGS$ONS_LABEL) #Ensure a single polygon
+polygonWGS <- gSimplify(polygonWGS, 0.0000009, topologyPreserve=TRUE) #Simplify
+polygonWGS <- SpatialPolygonsDataFrame(polygonWGS,data=as.data.frame(ONS_CODE,row.names=names(polygonWGS))) #Convert back to spatial polygon data frame
+
+setwd("/Users/alex/Dropbox/Projects/HE_Lookup/Boundaries/LSOA_DZ_SOA")
+
+#Write file
+writeOGR(polygonWGS, dsn=paste0(ONS_CODE,".geojson"), layer="polygonWGS", driver="GeoJSON")
+remove(polygonWGS)
+remove(ONS_CODE)
+
+}
+
+
+```
+

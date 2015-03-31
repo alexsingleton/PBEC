@@ -69,7 +69,10 @@ IMD_England <- read.csv("Data/England_IMD_Overall_2010.csv")
 IMD_England<- IMD_England[,c("LSOA_CODE","IMD_SCORE","IMD_RANK")]
 
 #Create Deciles
-IMD_England$Decile <- with(IMD_England, cut(IMD_England$IMD_SCORE, breaks=10, labels=10:1)) #1 = most deprived
+D_Locations <- quantile(IMD_England$IMD_SCORE, probs = seq(0.1,0.9,by=0.1))#1 = most deprived
+IMD_England$Decile <- cut(IMD_England$IMD_SCORE,c(-Inf,D_Locations, Inf),labels=10:1)
+
+
 
 #Create zone and length lookup
 IMD_England$Zone <- "LSOA"
@@ -81,7 +84,7 @@ IMD_England$CTRY <- "England"
 #Year Flag
 IMD_England$Year <- "2010"
 
-
+remove(D_Locations)
 ```
 
 
@@ -92,7 +95,8 @@ IMD_England$Year <- "2010"
 IMD_Scotland <- read.csv("Data/Scotland_IMD_Overall_2012.csv")
 
 #Create Deciles
-IMD_Scotland$Decile <- with(IMD_Scotland, cut(IMD_Scotland$IMD_SCORE, breaks=10, labels=10:1)) #1 = most deprived
+D_Locations <- quantile(IMD_Scotland$IMD_SCORE, probs = seq(0.1,0.9,by=0.1))#1 = most deprived
+IMD_Scotland$Decile <- cut(IMD_Scotland$IMD_SCORE,c(-Inf,D_Locations, Inf),labels=10:1)
 
 #Create zone and length lookup
 IMD_Scotland$Zone <- "Data Zone"
@@ -104,7 +108,7 @@ IMD_Scotland$CTRY <- "Scotland"
 #Year Flag
 IMD_Scotland$Year <- "2012"
 
-
+remove(D_Locations)
 
 ```
 
@@ -133,7 +137,8 @@ IMD_Scotland$Year <- "2012"
 IMD_Wales <- read.csv("Data/Wales_IMD_Overall_2014.csv") #NB - Only supplies ranks
 
 #Create Deciles
-IMD_Wales$Decile <- with(IMD_Wales, cut(IMD_Wales$IMD_RANK, breaks=10, labels=1:10)) #1 = most deprived
+D_Locations <- quantile(IMD_Wales$IMD_SCORE, probs = seq(0.1,0.9,by=0.1))#1 = most deprived
+IMD_Wales$Decile <- cut(IMD_Wales$IMD_SCORE,c(-Inf,D_Locations, Inf),labels=10:1)
 
 #Create zone and length lookup
 IMD_Wales$Zone <- "LSOA"
@@ -145,7 +150,7 @@ IMD_Wales$CTRY <- "Wales"
 #Year Flag
 IMD_Wales$Year <- "2014"
 
-
+remove(D_Locations)
 ```
 
 ##IMD Northern Ireland
@@ -155,7 +160,8 @@ IMD_Wales$Year <- "2014"
 IMD_NI <- read.csv("Data/Northern_Ireland_IMD_Overall_2010.csv")
 
 #Create Deciles
-IMD_NI$Decile <- with(IMD_NI, cut(IMD_NI$IMD_SCORE, breaks=10, labels=10:1)) #1 = most deprived
+D_Locations <- quantile(IMD_NI$IMD_SCORE, probs = seq(0.1,0.9,by=0.1))#1 = most deprived
+IMD_NI$Decile <- cut(IMD_NI$IMD_SCORE,c(-Inf,D_Locations, Inf),labels=10:1)
 
 #Create zone and length lookup
 IMD_NI$Zone <- "SOA"
@@ -167,6 +173,7 @@ IMD_NI$CTRY <- "Northern Ireland"
 #Year Flag
 IMD_NI$Year <- "2010"
 
+remove(D_Locations)
 ```
 
 #Participation Of Local Areas Classification (POLAR)
